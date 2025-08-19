@@ -1,5 +1,5 @@
 /**
- * GOAT Bot Backend - ManyChat Compatible
+ * GOAT Bot Backend - ManyChat Response Mapping Compatible
  */
 
 const express = require("express");
@@ -19,11 +19,6 @@ app.get("/", (req, res) => {
     user: "sophoniagoat",
     timestamp: new Date().toISOString(),
     environment: "production",
-    endpoints: {
-      webhook: "/webhook/manychat",
-      manychat_api: "/api/webhook",
-      health: "/health",
-    },
   });
 });
 
@@ -32,86 +27,91 @@ app.get("/health", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     user: "sophoniagoat",
-    services: {
-      webhook: "active",
-      manychat: "integrated",
-    },
   });
 });
 
-// Original webhook endpoint
-app.post("/webhook/manychat", (req, res) => {
-  console.log("Original webhook received:", req.body);
-
-  res.json({
-    success: true,
-    message: "Webhook received successfully",
-    received: req.body,
-    timestamp: new Date().toISOString(),
-    user: "sophoniagoat",
-  });
-});
-
-// ManyChat compatible endpoint
+// ManyChat Response Mapping Compatible Endpoint
 app.post("/api/webhook", async (req, res) => {
   try {
-    console.log("ManyChat API webhook received:", {
+    console.log("ManyChat webhook received:", {
       body: req.body,
-      headers: req.headers,
       timestamp: new Date().toISOString(),
+      user: "sophoniagoat",
     });
 
     const { psid, message } = req.body;
 
     // Validate required fields
     if (!psid) {
-      return res.status(400).json({
-        message: "User ID is required",
-        status: "error",
-        echo: "User ID is required",
-        timestamp: new Date().toISOString(),
+      return res.json({
+        echo: "Sorry, I couldn't identify you. Please try again.",
       });
     }
 
     // Process message and generate response
-    const userMessage = message?.toLowerCase() || "";
+    const userMessage = (message || "").toLowerCase().trim();
     let botResponse;
 
-    if (userMessage.includes("hi") || userMessage.includes("hello")) {
+    // Smart response logic
+    if (
+      userMessage.includes("hi") ||
+      userMessage.includes("hello") ||
+      userMessage.includes("start")
+    ) {
       botResponse =
-        "Hi! 👋 Welcome to GOAT Bot! I'm your AI study assistant for Grade 10-11. How can I help you excel today?";
-    } else if (userMessage.includes("help")) {
+        "Hi there! 👋 Welcome to GOAT Bot! 🎓\n\nI'm your AI study assistant for Grade 10-11 students in South Africa. I can help you with:\n\n📚 Homework problems\n📝 Exam preparation  \n🧮 Math & Science\n📖 Study planning\n\nWhat subject are you working on today?";
+    } else if (userMessage.includes("help") || userMessage.includes("menu")) {
       botResponse =
-        "I can help you with:\n📚 Homework solutions\n📝 Exam preparation\n🧮 Math problems\n📖 Study planning\n\nWhat subject are you working on?";
-    } else if (userMessage.includes("math")) {
+        "Here's how I can help you excel! 🌟\n\n📚 HOMEWORK HELP\nSend me your questions and I'll solve them step-by-step\n\n📝 EXAM PREP\nGet study plans and practice questions\n\n🧮 MATH & SCIENCE\nAlgebra, Geometry, Physics, Chemistry\n\n📖 STUDY TIPS\nEffective study techniques\n\nJust describe what you need help with!";
+    } else if (
+      userMessage.includes("math") ||
+      userMessage.includes("algebra") ||
+      userMessage.includes("geometry")
+    ) {
       botResponse =
-        "Perfect! 🧮 I love math! Send me your problem and I'll solve it step-by-step. Whether it's algebra, geometry, or calculus - I'm here to help!";
+        "Perfect! 🧮 I love helping with Math!\n\nSend me your math problem and I'll:\n✅ Solve it step-by-step\n✅ Explain the concepts\n✅ Give you similar practice problems\n\nWhat math topic are you working on? (Algebra, Geometry, Trigonometry, etc.)";
+    } else if (
+      userMessage.includes("science") ||
+      userMessage.includes("physics") ||
+      userMessage.includes("chemistry")
+    ) {
+      botResponse =
+        "Awesome! 🔬 Science is fascinating!\n\nI can help you with:\n⚗️ Chemistry equations\n⚡ Physics problems\n🧬 Biology concepts\n\nWhat science topic do you need help with?";
+    } else if (userMessage.includes("exam") || userMessage.includes("test")) {
+      botResponse =
+        "Let's ace that exam! 📝💪\n\nTell me:\n1️⃣ What subject?\n2️⃣ When is your exam?\n3️⃣ What topics are you struggling with?\n\nI'll create a personalized study plan for you!";
+    } else if (userMessage.includes("homework")) {
+      botResponse =
+        "I'm here to help with your homework! 📚\n\nJust send me:\n📸 A photo of the problem\n✏️ Type out the question\n📝 Tell me the subject\n\nI'll walk you through the solution step-by-step!";
     } else {
-      botResponse = `I see you said "${message}". I'm here to help with your studies! Try asking about homework, math problems, or exam preparation. 📚`;
+      botResponse = `I see you said: "${message}" 🤔\n\nI'm GOAT Bot, your AI study assistant! I'm here to help Grade 10-11 students with:\n\n📚 Homework & assignments\n🧮 Math problems\n🔬 Science questions\n📝 Exam preparation\n\nTry saying "help" to see all my features, or just describe what you need help with!`;
     }
 
+    // ManyChat expects ONLY the "echo" field for Response Mapping
     const response = {
-      message: botResponse,
-      status: "success",
       echo: botResponse,
-      timestamp: new Date().toISOString(),
-      user: "sophoniagoat",
-      psid: psid,
     };
 
-    console.log("Sending response:", response);
+    console.log("Sending ManyChat response:", response);
     res.json(response);
   } catch (error) {
     console.error("ManyChat webhook error:", error);
 
-    res.status(500).json({
-      message: "Sorry, I encountered an error. Please try again.",
-      status: "error",
-      echo: "Sorry, I encountered an error. Please try again.",
-      timestamp: new Date().toISOString(),
-      error: error.message,
+    // Even errors must follow ManyChat's echo format
+    res.json({
+      echo: "Sorry, I encountered a technical issue. Please try again in a moment! 🔧",
     });
   }
+});
+
+// Original webhook (for testing)
+app.post("/webhook/manychat", (req, res) => {
+  res.json({
+    success: true,
+    message: "Original webhook working",
+    received: req.body,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.get("/webhook/health", (req, res) => {
@@ -120,10 +120,6 @@ app.get("/webhook/health", (req, res) => {
     service: "webhook",
     timestamp: new Date().toISOString(),
     user: "sophoniagoat",
-    endpoints: {
-      manychat_original: "/webhook/manychat",
-      manychat_api: "/api/webhook",
-    },
   });
 });
 
