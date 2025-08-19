@@ -1,5 +1,5 @@
 /**
- * GOAT Bot Backend - OpenAI Integration
+ * GOAT Bot Backend - With User State Management
  * User: sophoniagoat
  */
 
@@ -10,7 +10,39 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// OpenAI integration function
+// Simple in-memory user state storage (for production, use a database)
+const userStates = new Map();
+
+// Set user state
+function setUserState(psid, state, context = {}) {
+  userStates.set(psid, {
+    mode: state,
+    context: context,
+    timestamp: Date.now(),
+  });
+  console.log(`User ${psid} state set to: ${state}`);
+}
+
+// Get user state
+function getUserState(psid) {
+  const state = userStates.get(psid);
+
+  // Clean up old states (older than 1 hour)
+  if (state && Date.now() - state.timestamp > 3600000) {
+    userStates.delete(psid);
+    return null;
+  }
+
+  return state;
+}
+
+// Clear user state
+function clearUserState(psid) {
+  userStates.delete(psid);
+  console.log(`User ${psid} state cleared`);
+}
+
+// OpenAI integration function (keep existing)
 async function getOpenAIResponse(prompt, context = "general") {
   if (!process.env.OPENAI_API_KEY) {
     console.log("OpenAI API key not configured");
@@ -18,6 +50,12 @@ async function getOpenAIResponse(prompt, context = "general") {
   }
 
   try {
+    console.log("Making OpenAI request...", {
+      prompt: prompt.substring(0, 50),
+      context,
+      model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+    });
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -44,16 +82,35 @@ async function getOpenAIResponse(prompt, context = "general") {
       }),
     });
 
+    console.log("OpenAI response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("OpenAI API error response:", {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+      });
+      return null;
+    }
+
     const data = await response.json();
+    console.log("OpenAI response received:", {
+      choices: data.choices?.length || 0,
+      usage: data.usage,
+    });
 
     if (data.choices && data.choices[0]) {
       return data.choices[0].message.content;
     }
 
-    console.error("OpenAI unexpected response:", data);
+    console.error("OpenAI unexpected response structure:", data);
     return null;
   } catch (error) {
-    console.error("OpenAI API error:", error);
+    console.error("OpenAI API error details:", {
+      message: error.message,
+      stack: error.stack?.substring(0, 200),
+    });
     return null;
   }
 }
@@ -61,11 +118,12 @@ async function getOpenAIResponse(prompt, context = "general") {
 // Basic routes
 app.get("/", (req, res) => {
   res.json({
-    message: "GOAT Bot Backend API - OpenAI Ready!",
-    version: "2.0.0",
+    message: "GOAT Bot Backend API - OpenAI Ready with State Management!",
+    version: "2.1.0",
     user: "sophoniagoat",
     timestamp: new Date().toISOString(),
     openai_configured: !!process.env.OPENAI_API_KEY,
+    active_users: userStates.size,
   });
 });
 
@@ -75,10 +133,11 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     user: "sophoniagoat",
     openai_status: process.env.OPENAI_API_KEY ? "configured" : "not_configured",
+    active_states: userStates.size,
   });
 });
 
-// OpenAI test endpoint
+// OpenAI test endpoint (keep existing)
 app.get("/api/test-openai", async (req, res) => {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -105,7 +164,8 @@ app.get("/api/test-openai", async (req, res) => {
     } else {
       res.json({
         status: "error",
-        message: "OpenAI API call failed",
+        message: "OpenAI API call failed - check server logs",
+        api_key_configured: !!process.env.OPENAI_API_KEY,
         timestamp: new Date().toISOString(),
       });
     }
@@ -119,7 +179,7 @@ app.get("/api/test-openai", async (req, res) => {
   }
 });
 
-// Main ManyChat webhook with OpenAI integration
+// Main ManyChat webhook with state management
 app.post("/api/webhook", async (req, res) => {
   try {
     console.log("GOAT Bot webhook received:", {
@@ -137,9 +197,53 @@ app.post("/api/webhook", async (req, res) => {
     }
 
     const userMessage = (message || "").toLowerCase().trim();
+    const currentState = getUserState(psid);
     let botResponse;
 
-    // === MAIN MENU SYSTEM (Fast responses, no AI) ===
+    console.log(`User ${psid} current state:`, currentState?.mode || "none");
+
+    // === STATE-BASED RESPONSES ===
+
+    // If user is in a specific mode, handle with AI
+    if (currentState) {
+      let contextPrompt = "";
+
+      switch (currentState.mode) {
+        case "exam_prep":
+          contextPrompt = `User is in exam preparation mode. They said: "${message}". 
+                          Help them create a study plan, suggest topics, or answer exam-related questions.
+                          Be encouraging and provide actionable advice.`;
+          break;
+
+        case "homework_help":
+          contextPrompt = `User needs homework help. They said: "${message}". 
+                          Provide step-by-step explanations, guide them through problems,
+                          and help them understand concepts. Don't just give answers.`;
+          break;
+
+        case "practice_mode":
+          contextPrompt = `User wants practice questions. They said: "${message}". 
+                          Generate appropriate practice problems for their grade level,
+                          or help them with practice they're working on.`;
+          break;
+      }
+
+      if (contextPrompt) {
+        const aiResponse = await getOpenAIResponse(
+          contextPrompt,
+          currentState.mode
+        );
+
+        if (aiResponse) {
+          botResponse =
+            aiResponse + '\n\n💡 Say "menu" anytime to return to main options!';
+          res.json({ echo: botResponse });
+          return;
+        }
+      }
+    }
+
+    // === MENU SYSTEM (Fast responses, no AI) ===
 
     // Initial greeting and menu
     if (
@@ -148,6 +252,7 @@ app.post("/api/webhook", async (req, res) => {
       userMessage.includes("start") ||
       userMessage === ""
     ) {
+      clearUserState(psid);
       botResponse =
         `Welcome to The GOAT. I'm here help you study with calm and clarity.\n\n` +
         `What do you need right now?\n\n` +
@@ -159,6 +264,7 @@ app.post("/api/webhook", async (req, res) => {
 
     // Menu option 1: Exam/Test preparation
     else if (userMessage === "1") {
+      setUserState(psid, "exam_prep");
       botResponse =
         `📅 Exam prep mode activated! 💪\n\n` +
         `Let's get you ready:\n\n` +
@@ -170,6 +276,7 @@ app.post("/api/webhook", async (req, res) => {
 
     // Menu option 2: Homework help
     else if (userMessage === "2") {
+      setUserState(psid, "homework_help");
       botResponse =
         `📚 Homework helper activated! 🫶\n\n` +
         `I'm here to guide you through it:\n\n` +
@@ -181,6 +288,7 @@ app.post("/api/webhook", async (req, res) => {
 
     // Menu option 3: Practice questions
     else if (userMessage === "3") {
+      setUserState(psid, "practice_mode");
       botResponse =
         `🧮 Practice mode activated! 💫\n\n` +
         `Let's sharpen those skills:\n\n` +
@@ -196,6 +304,7 @@ app.post("/api/webhook", async (req, res) => {
       userMessage.includes("back") ||
       userMessage.includes("main")
     ) {
+      clearUserState(psid);
       botResponse =
         `Welcome back to The GOAT! 🐐\n\n` +
         `What do you need right now?\n\n` +
@@ -205,10 +314,9 @@ app.post("/api/webhook", async (req, res) => {
         `Just pick a number! ✨`;
     }
 
-    // === AI-POWERED RESPONSES ===
-    // Everything else goes to OpenAI for intelligent responses
+    // === AI-POWERED RESPONSES (for users not in menu mode) ===
     else {
-      console.log("Attempting OpenAI response for:", userMessage);
+      console.log("Using AI for general response:", userMessage);
 
       // Determine context based on keywords
       let context = "general";
@@ -226,24 +334,13 @@ app.post("/api/webhook", async (req, res) => {
         userMessage.includes("photosynthesis")
       ) {
         context = "science";
-      } else if (
-        userMessage.includes("exam") ||
-        userMessage.includes("test") ||
-        userMessage.includes("study")
-      ) {
-        context = "exam_prep";
-      } else if (
-        userMessage.includes("homework") ||
-        userMessage.includes("assignment")
-      ) {
-        context = "homework_help";
       }
 
       // Try to get AI response
       const aiResponse = await getOpenAIResponse(message, context);
 
       if (aiResponse) {
-        botResponse = aiResponse;
+        botResponse = aiResponse + '\n\n💡 Say "menu" for more options!';
         console.log("OpenAI response generated successfully");
       } else {
         // Fallback to menu system
@@ -276,11 +373,12 @@ app.post("/api/webhook", async (req, res) => {
 app.get("/webhook/health", (req, res) => {
   res.json({
     status: "OK",
-    service: "GOAT Bot with OpenAI",
+    service: "GOAT Bot with OpenAI & State Management",
     timestamp: new Date().toISOString(),
     user: "sophoniagoat",
-    features: ["menu-driven", "openai-integrated"],
+    features: ["menu-driven", "openai-integrated", "stateful"],
     openai_configured: !!process.env.OPENAI_API_KEY,
+    active_user_states: userStates.size,
   });
 });
 
