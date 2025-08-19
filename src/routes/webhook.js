@@ -1,20 +1,10 @@
 /**
- * Simplified Webhook Routes for Debugging
+ * ManyChat Webhook Routes
  */
 
 const express = require("express");
 const router = express.Router();
 const logger = require("../utils/logger");
-
-// Simple test route to verify router works
-router.get("/test", (req, res) => {
-  logger.info("Webhook test route accessed");
-  res.json({
-    message: "Webhook router is working",
-    timestamp: new Date().toISOString(),
-    user: "sophoniagoat",
-  });
-});
 
 // Health check for webhooks
 router.get("/health", (req, res) => {
@@ -29,10 +19,10 @@ router.get("/health", (req, res) => {
   });
 });
 
-// Simplified ManyChat webhook endpoint
+// Main ManyChat webhook endpoint (POST)
 router.post("/manychat", (req, res) => {
   try {
-    logger.info("ManyChat webhook accessed", {
+    logger.info("ManyChat webhook POST request received", {
       method: req.method,
       body: req.body,
       timestamp: new Date().toISOString(),
@@ -77,15 +67,25 @@ router.post("/manychat", (req, res) => {
   }
 });
 
-// Debug: Log all requests to this router
-router.use((req, res, next) => {
-  logger.info("Webhook router request", {
-    method: req.method,
-    path: req.path,
-    originalUrl: req.originalUrl,
+// GET route for easy browser testing
+router.get("/manychat", (req, res) => {
+  logger.info("ManyChat webhook GET request (test mode)");
+  res.json({
+    message: "ManyChat webhook endpoint is working",
+    note: "This is a GET request for testing. Real webhooks should use POST.",
+    testPOSTwith: {
+      method: "POST",
+      url: "https://goat-ai.vercel.app/webhook/manychat",
+      headers: { "Content-Type": "application/json" },
+      body: {
+        userId: "test123",
+        action: "test",
+        data: {},
+      },
+    },
     timestamp: new Date().toISOString(),
+    user: "sophoniagoat",
   });
-  next();
 });
 
 module.exports = router;
