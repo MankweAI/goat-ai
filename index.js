@@ -1,5 +1,5 @@
 /**
- * GOAT Bot Backend - Menu-Driven System
+ * GOAT Bot Backend - OpenAI Integration
  * User: sophoniagoat
  */
 
@@ -10,13 +10,62 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// OpenAI integration function
+async function getOpenAIResponse(prompt, context = "general") {
+  if (!process.env.OPENAI_API_KEY) {
+    console.log("OpenAI API key not configured");
+    return null;
+  }
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: `You are The GOAT, an AI tutor for Grade 10-11 students in South Africa. 
+                     Be helpful, encouraging, and educational. Use step-by-step explanations.
+                     Keep responses concise but thorough. Use emojis appropriately.
+                     Context: ${context}`,
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.choices && data.choices[0]) {
+      return data.choices[0].message.content;
+    }
+
+    console.error("OpenAI unexpected response:", data);
+    return null;
+  } catch (error) {
+    console.error("OpenAI API error:", error);
+    return null;
+  }
+}
+
 // Basic routes
 app.get("/", (req, res) => {
   res.json({
-    message: "GOAT Bot Backend API - Menu-Driven System Ready!",
+    message: "GOAT Bot Backend API - OpenAI Ready!",
     version: "2.0.0",
     user: "sophoniagoat",
     timestamp: new Date().toISOString(),
+    openai_configured: !!process.env.OPENAI_API_KEY,
   });
 });
 
@@ -25,27 +74,52 @@ app.get("/health", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     user: "sophoniagoat",
+    openai_status: process.env.OPENAI_API_KEY ? "configured" : "not_configured",
   });
 });
 
-// Helper function for OpenAI (when API key is available)
-async function getAIResponse(prompt, context = "") {
-  // Check if OpenAI is configured
-  if (!process.env.OPENAI_API_KEY) {
-    return null; // Fall back to predefined responses
-  }
-
+// OpenAI test endpoint
+app.get("/api/test-openai", async (req, res) => {
   try {
-    // This would integrate with OpenAI API
-    // For now, return null to use menu system
-    return null;
-  } catch (error) {
-    console.error("OpenAI error:", error);
-    return null;
-  }
-}
+    if (!process.env.OPENAI_API_KEY) {
+      return res.json({
+        status: "error",
+        message: "OpenAI API key not configured",
+        timestamp: new Date().toISOString(),
+      });
+    }
 
-// Main ManyChat webhook with menu system
+    const testResponse = await getOpenAIResponse(
+      'Say "Hello! OpenAI is working!" and explain what 2+2 equals in a fun way.',
+      "test"
+    );
+
+    if (testResponse) {
+      res.json({
+        status: "success",
+        message: "OpenAI API is working!",
+        model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+        test_response: testResponse,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      res.json({
+        status: "error",
+        message: "OpenAI API call failed",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    res.json({
+      status: "error",
+      message: "OpenAI test failed",
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// Main ManyChat webhook with OpenAI integration
 app.post("/api/webhook", async (req, res) => {
   try {
     console.log("GOAT Bot webhook received:", {
@@ -65,7 +139,7 @@ app.post("/api/webhook", async (req, res) => {
     const userMessage = (message || "").toLowerCase().trim();
     let botResponse;
 
-    // === MAIN MENU SYSTEM ===
+    // === MAIN MENU SYSTEM (Fast responses, no AI) ===
 
     // Initial greeting and menu
     if (
@@ -84,11 +158,7 @@ app.post("/api/webhook", async (req, res) => {
     }
 
     // Menu option 1: Exam/Test preparation
-    else if (
-      userMessage.includes("1") ||
-      userMessage.includes("exam") ||
-      userMessage.includes("test")
-    ) {
+    else if (userMessage === "1") {
       botResponse =
         `📅 Exam prep mode activated! 💪\n\n` +
         `Let's get you ready:\n\n` +
@@ -99,7 +169,7 @@ app.post("/api/webhook", async (req, res) => {
     }
 
     // Menu option 2: Homework help
-    else if (userMessage.includes("2") || userMessage.includes("homework")) {
+    else if (userMessage === "2") {
       botResponse =
         `📚 Homework helper activated! 🫶\n\n` +
         `I'm here to guide you through it:\n\n` +
@@ -110,7 +180,7 @@ app.post("/api/webhook", async (req, res) => {
     }
 
     // Menu option 3: Practice questions
-    else if (userMessage.includes("3") || userMessage.includes("practice")) {
+    else if (userMessage === "3") {
       botResponse =
         `🧮 Practice mode activated! 💫\n\n` +
         `Let's sharpen those skills:\n\n` +
@@ -135,53 +205,48 @@ app.post("/api/webhook", async (req, res) => {
         `Just pick a number! ✨`;
     }
 
-    // Subject-specific responses
-    else if (
-      userMessage.includes("math") ||
-      userMessage.includes("algebra") ||
-      userMessage.includes("geometry")
-    ) {
-      botResponse =
-        `🧮 Math mastery mode! Let's solve this together:\n\n` +
-        `📝 Send me your math problem\n` +
-        `🔍 I'll break it down step-by-step\n` +
-        `💡 Then give you similar practice problems\n\n` +
-        `What specific math topic? (Algebra, Geometry, Trigonometry, etc.) 📐`;
-    } else if (
-      userMessage.includes("science") ||
-      userMessage.includes("physics") ||
-      userMessage.includes("chemistry")
-    ) {
-      botResponse =
-        `🔬 Science exploration time!\n\n` +
-        `⚗️ Chemistry reactions\n` +
-        `⚡ Physics problems\n` +
-        `🧬 Biology concepts\n\n` +
-        `What science topic can I help you master? 🌟`;
-    }
-
-    // Help and guidance
-    else if (userMessage.includes("help")) {
-      botResponse =
-        `🤝 I'm here to help you succeed!\n\n` +
-        `🎯 Choose from the main menu:\n\n` +
-        `1️⃣ 📅 Exam/Test prep\n` +
-        `2️⃣ 📚 Homework help\n` +
-        `3️⃣ 🧮 Practice questions\n\n` +
-        `Or just describe what you're working on! I'll guide you. ✨`;
-    }
-
-    // Default response - redirect to menu
+    // === AI-POWERED RESPONSES ===
+    // Everything else goes to OpenAI for intelligent responses
     else {
-      // Try to get AI response first (if OpenAI is configured)
-      const aiResponse = await getAIResponse(
-        `Student said: "${message}". Respond as a helpful tutor for Grade 10-11 students in South Africa.`,
-        "educational_assistant"
-      );
+      console.log("Attempting OpenAI response for:", userMessage);
+
+      // Determine context based on keywords
+      let context = "general";
+      if (
+        userMessage.includes("math") ||
+        userMessage.includes("algebra") ||
+        userMessage.includes("solve") ||
+        userMessage.includes("equation")
+      ) {
+        context = "mathematics";
+      } else if (
+        userMessage.includes("science") ||
+        userMessage.includes("physics") ||
+        userMessage.includes("chemistry") ||
+        userMessage.includes("photosynthesis")
+      ) {
+        context = "science";
+      } else if (
+        userMessage.includes("exam") ||
+        userMessage.includes("test") ||
+        userMessage.includes("study")
+      ) {
+        context = "exam_prep";
+      } else if (
+        userMessage.includes("homework") ||
+        userMessage.includes("assignment")
+      ) {
+        context = "homework_help";
+      }
+
+      // Try to get AI response
+      const aiResponse = await getOpenAIResponse(message, context);
 
       if (aiResponse) {
         botResponse = aiResponse;
+        console.log("OpenAI response generated successfully");
       } else {
+        // Fallback to menu system
         botResponse =
           `I see you said: "${message}" 🤔\n\n` +
           `I'm The GOAT, your study companion! Let me help you:\n\n` +
@@ -189,13 +254,16 @@ app.post("/api/webhook", async (req, res) => {
           `2️⃣ 📚 I got Homework 🫶\n` +
           `3️⃣ 🧮 I need more practice\n\n` +
           `Just pick a number or describe what you need! ✨`;
+        console.log("Fallback to menu system used");
       }
     }
 
     // Return ManyChat-compatible response
     res.json({ echo: botResponse });
 
-    console.log("GOAT Bot response sent:", { echo: botResponse });
+    console.log("GOAT Bot response sent:", {
+      echo: botResponse.substring(0, 100) + "...",
+    });
   } catch (error) {
     console.error("GOAT Bot error:", error);
     res.json({
@@ -208,10 +276,11 @@ app.post("/api/webhook", async (req, res) => {
 app.get("/webhook/health", (req, res) => {
   res.json({
     status: "OK",
-    service: "GOAT Bot Menu System",
+    service: "GOAT Bot with OpenAI",
     timestamp: new Date().toISOString(),
     user: "sophoniagoat",
-    features: ["menu-driven", "openai-ready"],
+    features: ["menu-driven", "openai-integrated"],
+    openai_configured: !!process.env.OPENAI_API_KEY,
   });
 });
 
