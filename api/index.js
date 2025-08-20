@@ -1,15 +1,15 @@
 /**
  * Vercel Serverless Function Entry Point
- * Updated to include all routes
+ * Updated to include monitoring routes
  */
 
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 
-// Import routes directly
-const webhookRoutes = require("../src/routes/webhook");
+// Import routes directly - ADD THIS LINE
 const monitoringRoutes = require("../src/routes/monitoring");
+const webhookRoutes = require("../src/routes/webhook");
 
 // Import database initialization
 const { initializeDatabase } = require("../src/lib/database");
@@ -56,9 +56,9 @@ app.get("/", (req, res) => {
   });
 });
 
-// Mount routes
-app.use("/webhook", webhookRoutes);
+// Mount routes - ADD THIS LINE
 app.use("/monitoring", monitoringRoutes);
+app.use("/webhook", webhookRoutes);
 
 // 404 handler
 app.use((req, res) => {
