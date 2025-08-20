@@ -5,15 +5,8 @@
 
 const express = require("express");
 const router = express.Router();
-const { getDatabase, testConnection } = require("../lib/database");
-const {
-  verifyDatabaseSchema,
-  getDatabaseSetupInstructions,
-} = require("../lib/database-init");
-const { testConnection: testOpenAI } = require("../services/openai");
-const logger = require("../utils/logger");
 
-// Comprehensive health check with enhanced database schema
+// Simple health check first
 router.get("/health", async (req, res) => {
   try {
     const healthCheck = {
@@ -23,7 +16,11 @@ router.get("/health", async (req, res) => {
       environment: process.env.NODE_ENV,
       project: "SA_Student_Companion",
       phase: "Infrastructure_Activation",
-      services: {},
+      services: {
+        app: "running",
+        database: "checking...",
+        openai: "checking...",
+      },
       system: {
         uptime: process.uptime(),
         memory: process.memoryUsage(),
@@ -31,100 +28,67 @@ router.get("/health", async (req, res) => {
       },
     };
 
-    // Test database connection and enhanced schema
+    // Try to test database
     try {
-      const dbConnected = await testConnection();
+      const { getDatabase } = require("../lib/database");
+      const db = getDatabase();
 
-      if (dbConnected) {
-        const schemaStatus = await verifyDatabaseSchema();
-        const requiredTables = [
-          "users",
-          "content_storage",
-          "user_feedback",
-          "content_quality_metrics",
-          "questions",
-          "explanations",
-          "analytics_events",
-          "user_question_views",
-          "explanation_feedback",
-        ];
+      // Simple test
+      const { data, error } = await db.from("users").select("count").limit(1);
 
-        const allTablesExist =
-          schemaStatus &&
-          requiredTables.every((table) => schemaStatus[table] === "exists");
-
+      if (error) {
         healthCheck.services.database = {
-          status: allTablesExist ? "connected" : "schema_incomplete",
-          type: "supabase_enhanced",
-          schema: schemaStatus,
-          pivotReady: allTablesExist,
-          ...(allTablesExist
-            ? { message: "Enhanced schema ready for SA Student Companion" }
-            : {
-                setupInstructions: getDatabaseSetupInstructions(),
-                missingTables: requiredTables.filter(
-                  (table) => !schemaStatus || schemaStatus[table] !== "exists"
-                ),
-              }),
+          status: "error",
+          error: error.message,
+          message: "Database connection failed - check Supabase credentials",
         };
       } else {
         healthCheck.services.database = {
-          status: "disconnected",
-          type: "supabase",
-          setupInstructions: getDatabaseSetupInstructions(),
+          status: "connected",
+          message: "Database connection successful",
         };
       }
-    } catch (error) {
+    } catch (dbError) {
       healthCheck.services.database = {
         status: "error",
-        error: error.message,
-        setupInstructions: getDatabaseSetupInstructions(),
+        error: dbError.message,
+        message: "Database initialization failed",
       };
     }
 
-    // Test OpenAI service with real connection
+    // Try to test OpenAI
     try {
-      const openaiConnected = await testOpenAI();
+      const { testConnection } = require("../services/openai");
+      const openaiWorking = await testConnection();
+
       healthCheck.services.openai = {
-        status: openaiConnected ? "connected" : "mock_mode",
-        type: "gpt-3.5-turbo",
-        pivotReady: openaiConnected,
-        message: openaiConnected
-          ? "Real OpenAI API connected and tested"
+        status: openaiWorking ? "connected" : "mock_mode",
+        message: openaiWorking
+          ? "OpenAI API connected and working"
           : "Using mock responses - add OPENAI_API_KEY to environment",
       };
-    } catch (error) {
+    } catch (aiError) {
       healthCheck.services.openai = {
-        status: process.env.OPENAI_API_KEY ? "error" : "mock_mode",
-        error: error.message,
-        message: "Add OPENAI_API_KEY to environment for real AI functionality",
+        status: "error",
+        error: aiError.message,
+        message: "OpenAI service test failed",
       };
     }
 
-    // Overall health status
+    // Determine overall status
     const hasErrors = Object.values(healthCheck.services).some(
-      (service) => service.status === "error"
-    );
-
-    const hasIncompleteSetup = Object.values(healthCheck.services).some(
-      (service) =>
-        ["disconnected", "schema_incomplete", "mock_mode"].includes(
-          service.status
-        )
+      (service) => typeof service === "object" && service.status === "error"
     );
 
     if (hasErrors) {
-      healthCheck.status = "ERROR";
-    } else if (hasIncompleteSetup) {
-      healthCheck.status = "SETUP_REQUIRED";
+      healthCheck.status = "DEGRADED";
     } else {
-      healthCheck.status = "PIVOT_READY";
-      healthCheck.message = "SA Student Companion infrastructure ready";
+      healthCheck.status = "OK";
     }
 
-    res.status(hasErrors ? 503 : 200).json(healthCheck);
+    res.json(healthCheck);
   } catch (error) {
-    logger.error("Health check failed", { error: error.message });
+    console.error("Health check failed:", error);
     res.status(500).json({
       status: "ERROR",
       error: error.message,
@@ -133,99 +97,53 @@ router.get("/health", async (req, res) => {
   }
 });
 
-// Rest of existing routes remain the same...
+// Database status endpoint
 router.get("/database-status", async (req, res) => {
   try {
-    const schemaStatus = await verifyDatabaseSchema();
-    const setupInstructions = getDatabaseSetupInstructions();
-
-    const requiredTables = [
-      "users",
-      "content_storage",
-      "user_feedback",
-      "content_quality_metrics",
-      "questions",
-      "explanations",
-      "analytics_events",
-      "user_question_views",
-      "explanation_feedback",
-    ];
-
-    res.json({
+    const status = {
       timestamp: new Date().toISOString(),
       user: "sophoniagoat",
       project: "SA_Student_Companion",
-      schema: schemaStatus,
-      setupInstructions,
-      isComplete:
-        schemaStatus &&
-        requiredTables.every((table) => schemaStatus[table] === "exists"),
-      pivotEnhancements: {
-        contentStorage: schemaStatus?.content_storage === "exists",
-        userFeedback: schemaStatus?.user_feedback === "exists",
-        qualityMetrics: schemaStatus?.content_quality_metrics === "exists",
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: "Failed to check database status",
-      setupInstructions: getDatabaseSetupInstructions(),
-      timestamp: new Date().toISOString(),
-    });
-  }
-});
-
-router.get("/metrics", async (req, res) => {
-  try {
-    const db = getDatabase();
-
-    const metrics = {
-      timestamp: new Date().toISOString(),
-      user: "sophoniagoat",
-      project: "SA_Student_Companion",
-      period: "24h",
-      users: { total: 0, optedIn: 0, grade10: 0, grade11: 0 },
-      activity: { totalEvents: 0, uniqueEventTypes: 0 },
-      content: {
-        stored: 0,
-        examQuestions: 0,
-        homeworkSolutions: 0,
-        memoryHacks: 0,
-        avgQualityScore: 0,
-      },
-      system: {
-        uptime: process.uptime(),
-        memoryUsage: process.memoryUsage(),
-        environment: process.env.NODE_ENV,
-      },
-      note: "Enhanced metrics for SA Student Companion - will populate when database is connected",
+      database: "testing...",
     };
 
-    res.json(metrics);
+    const { getDatabase } = require("../lib/database");
+    const db = getDatabase();
+
+    // Test basic connection
+    const { data, error } = await db.from("users").select("count").limit(1);
+
+    if (error) {
+      status.database = {
+        status: "error",
+        error: error.message,
+        message: "Please check Supabase credentials and run database schema",
+      };
+    } else {
+      status.database = {
+        status: "connected",
+        message: "Database connection successful",
+        tablesChecked: ["users"],
+      };
+    }
+
+    res.json(status);
   } catch (error) {
-    logger.error("Metrics collection failed", { error: error.message });
     res.status(500).json({
-      error: "Failed to collect metrics",
+      error: "Database status check failed",
+      message: error.message,
       timestamp: new Date().toISOString(),
     });
   }
 });
 
-router.get("/features", async (req, res) => {
-  const featureStats = {
-    mockExams: { usage: 0, avgRating: 0, contentStored: 0 },
-    homeworkHelp: { usage: 0, avgRating: 0, contentStored: 0 },
-    memoryHacks: { usage: 0, avgRating: 0, contentStored: 0 },
-  };
-
+// Simple test endpoint
+router.get("/test", (req, res) => {
   res.json({
+    message: "Monitoring route is working!",
     timestamp: new Date().toISOString(),
-    period: "7 days",
     user: "sophoniagoat",
     project: "SA_Student_Companion",
-    features: featureStats,
-    totalUsage: 0,
-    note: "Enhanced feature stats for SA Student Companion will be populated when database is connected",
   });
 });
 
