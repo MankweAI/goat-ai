@@ -1,5 +1,5 @@
 /**
- * OpenAI Service
+ * OpenAI Service - Enhanced for SA Student Companion
  */
 
 const OpenAI = require("openai");
@@ -22,13 +22,49 @@ function initializeOpenAI() {
     }
 
     openai = new OpenAI({ apiKey });
-    logger.info("OpenAI client initialized successfully");
+    logger.info(
+      "OpenAI client initialized successfully for SA Student Companion"
+    );
     return openai;
   } catch (error) {
     logger.error("Failed to initialize OpenAI client", {
       error: error.message,
     });
     return createMockClient();
+  }
+}
+
+/**
+ * Test OpenAI connection with SA-specific content
+ */
+async function testConnection() {
+  try {
+    if (!openai) {
+      openai = initializeOpenAI();
+    }
+
+    const testPrompt =
+      "Generate a simple Grade 10 Mathematics question about basic algebra following the South African CAPS curriculum.";
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: testPrompt }],
+      max_tokens: 150,
+      temperature: 0.7,
+    });
+
+    const generatedText = response.choices[0].message.content;
+
+    logger.info("OpenAI connection test successful", {
+      promptLength: testPrompt.length,
+      responseLength: generatedText.length,
+      preview: generatedText.substring(0, 100) + "...",
+    });
+
+    return true;
+  } catch (error) {
+    logger.error("OpenAI connection test failed", { error: error.message });
+    return false;
   }
 }
 
@@ -40,40 +76,25 @@ function createMockClient() {
     chat: {
       completions: {
         create: async (params) => {
-          logger.info("Mock OpenAI request", { params });
+          logger.info("Mock OpenAI request for SA Student Companion", {
+            model: params.model,
+            messageCount: params.messages.length,
+          });
 
-          // Generate mock responses based on the prompt
           const prompt = params.messages[0].content.toLowerCase();
 
-          let mockResponse = "This is a mock response for development.";
+          let mockResponse =
+            "This is a mock response for SA Student Companion development.";
 
-          if (prompt.includes("study plan")) {
-            mockResponse = JSON.stringify({
-              dailyPlan: [
-                {
-                  day: 1,
-                  topics: ["Mathematics"],
-                  activities: ["Review algebra", "Practice equations"],
-                },
-                {
-                  day: 2,
-                  topics: ["Physics"],
-                  activities: ["Study motion", "Practice problems"],
-                },
-              ],
-              reviewStrategy:
-                "Review all topics and practice example questions",
-              resources: ["Textbook", "Online videos", "Practice tests"],
-            });
-          } else if (
-            prompt.includes("explain") ||
-            prompt.includes("homework")
-          ) {
+          if (prompt.includes("exam") || prompt.includes("test")) {
             mockResponse =
-              "Here's a step-by-step explanation of the concept: 1) First understand the problem, 2) Identify the key elements, 3) Apply the appropriate formula or method, 4) Solve systematically.";
-          } else if (prompt.includes("motivational")) {
+              "**Mock Exam Question:** Solve for x in the equation: 2x + 5 = 15\n\n**Solution:**\n1. Subtract 5 from both sides: 2x = 10\n2. Divide both sides by 2: x = 5\n\n**Answer:** x = 5";
+          } else if (prompt.includes("homework")) {
             mockResponse =
-              "Stay focused on your goals! Every small step counts toward your success. 📚✨";
+              "**Homework Solution:** This appears to be a Grade 10 Mathematics problem. Here's the step-by-step solution following CAPS curriculum methodology...";
+          } else if (prompt.includes("memory") || prompt.includes("hack")) {
+            mockResponse =
+              "**Memory Hack:** For remembering quadratic formula: 'Negative b, plus or minus, square root, b squared minus 4ac, all over 2a' 📚";
           }
 
           return {
@@ -91,9 +112,7 @@ function createMockClient() {
   };
 }
 
-/**
- * Generate text using OpenAI
- */
+// Rest of existing functions remain the same...
 async function generateText(prompt, options = {}) {
   try {
     if (!openai) {
@@ -123,10 +142,8 @@ async function generateText(prompt, options = {}) {
   }
 }
 
-/**
- * Generate a study plan
- */
 async function generateStudyPlan(topics, testDate, grade) {
+  // Existing implementation...
   try {
     const today = new Date();
     const examDate = new Date(testDate);
@@ -172,10 +189,8 @@ Return the response as a valid JSON object with this structure:
   }
 }
 
-/**
- * Generate homework explanation
- */
 async function generateHomeworkExplanation(problemText, subject = null) {
+  // Existing implementation...
   try {
     let prompt = `Please provide a clear, step-by-step explanation for this academic problem:\n\n${problemText}\n\n`;
 
@@ -202,6 +217,7 @@ Keep the explanation clear and educational for a high school student.`;
 
 module.exports = {
   initializeOpenAI,
+  testConnection,
   generateText,
   generateStudyPlan,
   generateHomeworkExplanation,
